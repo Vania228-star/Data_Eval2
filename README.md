@@ -15,20 +15,21 @@ Módulo de persistencia basado en MySQL 8.0 diseñado para el ecosistema digital
 - **MySQL Workbench**: Opcional, para diseño y administración gráfica
 
 ## Estructura de Archivos
+Para asegurar la portabilidad y el cumplimiento del flujo CI/CD, el repositorio se organiza de la siguiente manera:
 
 ```
 database/
-├── 01_creacion_base_datos.sql    # Definición de esquema y datos semilla
-├── 02_backup_y_mantenimiento.sql # Scripts para continuidad operativa
+├── 01_creacion_base_datos.sql    # Estructura central, Vistas y SP de aplicación.
+├── 02_backup_y_mantenimiento.sql # Triggers de auditoría, funciones y protocolos de backup.
 ├── docker-compose.yml            # Orquestación y configuración de volúmenes
 └── README.md                     # Documentación técnica
 ```
 ## Persistencia de Datos
 Se ha implementado una estrategia de persistencia mediante Volúmenes Docker para asegurar que la información crítica no se pierda al reiniciar contenedores:
 
-- **Tipo de Volumen**: Se utilizan Named Volumes (definidos en docker-compose.yml).
+- **Tipo de Volumen**: Se utiliza innovatech_data:/var/lib/mysql
 
-- **Justificación**: Se eligen Named Volumes para delegar la gestión del almacenamiento a Docker, facilitando la portabilidad y el respaldo de datos en las instancias EC2 de AWS.
+- **Justificación**: A diferencia de los bind mounts, los volúmenes nombrados permiten a Docker gestionar los permisos de escritura de forma óptima en el entorno Linux de la instancia EC2, evitando errores de acceso denegado y facilitando la migración de datos.
 
 - **Continuidad Operativa**: El volumen asegura la persistencia de las tablas de usuarios y configuraciones del Backend.
 
@@ -104,7 +105,7 @@ Esta tabla centraliza la información de los colaboradores de Innovatech y es co
 
 ### Tabla Principal: `usuarios`
 
-Representa la entidad central para la gestión de acceso y perfiles en el sistema.
+Centraliza la información de los colaboradores. La estructura incluye auditoría automática:
 
 | Columna | Tipo | Nulo | Default | Descripción |
 |---------|------|------|---------|-------------|
@@ -128,8 +129,8 @@ Se han implementado índices estratégicos para garantizar una respuesta rápida
 - `INDEX COMPUESTO` en `nombre, estado` # Optimiza consultas complejas del Frontend.
 
 ### Vistas Disponibles
-- `vista_usuarios_activos`: Usuarios con estado 'activo'
-- `vista_estadisticas_usuarios`: Estadísticas básicas por fecha
+- `vista_usuarios_activos`: Proporciona datos filtrados listos para el consumo de la API.
+- `sp_crear_usuario`: Encapsula la lógica de inserción con manejo de transacciones para evitar datos corruptos
 
 ## Comandos Básicos
 
@@ -235,7 +236,13 @@ gunzip < backup_20240430_120000.sql.gz | mysql -u root -p innovatech_db
 ```
 
 ## Mantenimiento
-Prácticas DevOps para garantizar la eficiencia y estabilidad del motor de base de datos a largo plazo.
+La solución no es solo una base de datos, es un entorno mantenible:
+
+- **Auditoría**: Se incluyen Triggers (trg_usuarios_audit_insert) que monitorean cambios en tiempo real, vital para la trazabilidad exigida por Innovatech.
+
+- **Limpieza Proactiva**: El procedimiento sp_mantenimiento_limpiar_inactivos permite purgar datos antiguos, optimizando el uso de disco en el volumen EBS de AWS.
+
+- **Funciones Especializadas**: Como fn_capitalizar_texto, que asegura que la presentación de datos en el Frontend sea profesional y uniforme.
 
 ### Optimización Periódica
 ```sql
@@ -326,6 +333,22 @@ Las variables DB_PASSWORD y DB_ROOT_PASSWORD no deben declararse en texto plano.
 
 ## Seguridad
 
+### Variables de Entorno (Secrets)
+Para el despliegue vía GitHub Actions en la rama deploy, las credenciales NUNCA se suben al código. Se inyectan mediante secretos:
+
+# Fragmento del docker-compose.yml
+
+```yaml
+services:
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: innovatech_db
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+```
+
 ### Buenas Prácticas de Innovatech Chile
 
 - **No usar root en producción**: Se deben crear usuarios específicos con privilegios limitados para el Backend.
@@ -347,8 +370,17 @@ CREATE USER 'secure_user'@'%' IDENTIFIED BY 'contraseña' REQUIRE SSL;
 GRANT SELECT, INSERT, UPDATE, DELETE ON innovatech_db.* TO 'secure_user'@'%';
 ```
 
+## Protocolo de Red
+En la infraestructura de AWS, el acceso al puerto 3306 está estrictamente limitado por el Security Group, permitiendo tráfico únicamente desde el contenedor del Backend.
+
 ## Troubleshooting
-Procedimientos para la resolución de incidentes comunes durante el despliegue o la operación en EC2.
+En caso de fallos en la comunicación Front-Back:
+
+- **Verificar Red**: docker network inspect [nombre_red] para asegurar que el host db es visible.
+
+- **Verificar Logs**: docker logs [container_id] para identificar bloqueos de transacciones o errores de privilegios.
+
+- **Integridad**: Ejecutar CALL sp_auditoria_integridad_datos() para detectar registros inconsistentes que puedan romper el Backend.
 
 ### Problemas Comunes
 Si el Frontend no logra comunicarse con la base de datos, verifique:
