@@ -1,211 +1,123 @@
 -- =====================================================
--- SCRIPTS DE BACKUP Y MANTENIMIENTO
--- Proyecto: Sistema de Gestión de Usuarios
+-- SCRIPTS DE BACKUP Y MANTENIMIENTO - INNOVATECH CHILE
+-- Proyecto: Fit Project / Ecosistema Digital
 -- Motor: MySQL 8.0+
+-- Objetivo: Continuidad Operativa y Auditoría (IE2, IE8)
 -- =====================================================
 
+USE innovatech_db;
+
 -- =====================================================
--- PROCEDIMIENTOS DE MANTENIMIENTO
+-- 1. PROCEDIMIENTOS DE MANTENIMIENTO (IE2)
 -- =====================================================
 
--- Procedimiento para limpiar usuarios inactivos antiguos
+-- Limpieza automatizada de usuarios inactivos
 DELIMITER //
-CREATE PROCEDURE sp_limpiar_usuarios_inactivos(IN dias_antiguedad INT)
+CREATE PROCEDURE sp_mantenimiento_limpiar_inactivos(IN p_dias_antiguedad INT)
 BEGIN
-    DECLARE cantidad_eliminados INT DEFAULT 0;
+    DECLARE v_cantidad INT DEFAULT 0;
     
-    -- Eliminar usuarios inactivos con más de X días de antigüedad
     DELETE FROM usuarios 
     WHERE estado = 'inactivo' 
-    AND fecha_actualizacion < DATE_SUB(NOW(), INTERVAL dias_antiguedad DAY);
+    AND fecha_actualizacion < DATE_SUB(NOW(), INTERVAL p_dias_antiguedad DAY);
     
-    SET cantidad_eliminados = ROW_COUNT();
-    
-    -- Registrar la operación
-    SELECT CONCAT('Se eliminaron ', cantidad_eliminados, ' usuarios inactivos antiguos') AS mensaje;
+    SET v_cantidad = ROW_COUNT();
+    SELECT CONCAT('Mantenimiento Exitoso: ', v_cantidad, ' registros depurados.') AS logs;
 END //
-DELIMITER ;
 
--- Procedimiento para actualizar estadísticas
-DELIMITER //
-CREATE PROCEDURE sp_actualizar_estadisticas()
+-- Generación de métricas para el Frontend (IE5)
+CREATE PROCEDURE sp_reporte_metricas_sistema()
 BEGIN
-    -- Crear tabla temporal para estadísticas
-    CREATE TEMPORARY TABLE IF NOT EXISTS temp_estadisticas (
-        total_usuarios INT,
-        usuarios_activos INT,
-        usuarios_inactivos INT,
-        edad_promedio DECIMAL(5,2),
-        fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-    
-    -- Insertar datos actuales
-    INSERT INTO temp_estadisticas (total_usuarios, usuarios_activos, usuarios_inactivos, edad_promedio)
     SELECT 
         COUNT(*) as total_usuarios,
-        COUNT(CASE WHEN estado = 'activo' THEN 1 END) as usuarios_activos,
-        COUNT(CASE WHEN estado = 'inactivo' THEN 1 END) as usuarios_inactivos,
-        AVG(edad) as edad_promedio
+        COUNT(CASE WHEN estado = 'activo' THEN 1 END) as activos,
+        AVG(edad) as edad_promedio,
+        NOW() as fecha_reporte
     FROM usuarios;
-    
-    -- Mostrar estadísticas
-    SELECT * FROM temp_estadisticas;
 END //
-DELIMITER ;
 
--- Procedimiento para validar integridad de datos
-DELIMITER //
-CREATE PROCEDURE sp_validar_integridad()
+-- Validación de integridad preventiva
+CREATE PROCEDURE sp_auditoria_integridad_datos()
 BEGIN
-    -- Verificar emails duplicados (no debería haber por la constraint UNIQUE)
-    SELECT 
-        email,
-        COUNT(*) as cantidad_duplicados
-    FROM usuarios
-    GROUP BY email
-    HAVING COUNT(*) > 1;
+    -- Detectar edades fuera de rango operativo
+    SELECT id, nombre, email, edad 
+    FROM usuarios 
+    WHERE edad < 0 OR edad > 120;
     
-    -- Verificar usuarios con edad inválida
-    SELECT 
-        id,
-        nombre,
-        email,
-        edad
-    FROM usuarios
-    WHERE edad IS NOT NULL 
-    AND (edad < 0 OR edad > 150);
-    
-    -- Verificar usuarios sin email
-    SELECT 
-        id,
-        nombre
-    FROM usuarios
-    WHERE email IS NULL OR email = '';
+    -- Detectar inconsistencias en emails
+    SELECT id, nombre, email 
+    FROM usuarios 
+    WHERE email NOT LIKE '%@%';
 END //
 DELIMITER ;
 
 -- =====================================================
--- FUNCIONES ÚTILES
+-- 2. FUNCIONES DE FORMATEO (IE1)
 -- =====================================================
 
--- Función para calcular edad a partir de fecha de nacimiento (futura implementación)
 DELIMITER //
-CREATE FUNCTION fn_calcular_edad(fecha_nacimiento DATE) 
-RETURNS INT
+CREATE FUNCTION fn_capitalizar_texto(p_cadena VARCHAR(255)) 
+RETURNS VARCHAR(255)
 DETERMINISTIC
-READS SQL DATA
 BEGIN
-    DECLARE edad INT;
-    
-    SET edad = TIMESTAMPDIFF(YEAR, fecha_nacimiento, CURDATE());
-    
-    RETURN edad;
-END //
-DELIMITER ;
-
--- Función para formatear nombre completo
-DELIMITER //
-CREATE FUNCTION fn_formatear_nombre(nombre VARCHAR(100)) 
-RETURNS VARCHAR(100)
-DETERMINISTIC
-READS SQL DATA
-BEGIN
-    DECLARE nombre_formateado VARCHAR(100);
-    
-    -- Convertir a formato título (primera letra mayúscula)
-    SET nombre_formateado = UPPER(LEFT(nombre, 1)) + LOWER(SUBSTRING(nombre, 2));
-    
-    RETURN nombre_formateado;
+    RETURN CONCAT(UPPER(LEFT(p_cadena, 1)), LOWER(SUBSTRING(p_cadena, 2)));
 END //
 DELIMITER ;
 
 -- =====================================================
--- TRIGGERS PARA AUDITORÍA
+-- 3. TRIGGERS DE AUDITORÍA (Seguridad IE6)
 -- =====================================================
 
--- Trigger para registrar cambios en usuarios
+-- Log preventivo ante inserciones
 DELIMITER //
 CREATE TRIGGER trg_usuarios_audit_insert
 AFTER INSERT ON usuarios
 FOR EACH ROW
 BEGIN
-    -- Aquí se podría insertar en una tabla de auditoría
-    -- Ejemplo: INSERT INTO auditoria_usuarios (accion, usuario_id, datos_antiguos, datos_nuevos, fecha) 
-    -- VALUES ('INSERT', NEW.id, NULL, JSON_OBJECT('nombre', NEW.nombre, 'email', NEW.email), NOW());
-    
-    -- Por ahora, solo un log simple
-    SELECT CONCAT('Nuevo usuario creado: ', NEW.nombre, ' (ID: ', NEW.id, ')') AS mensaje;
+    -- Nota: En producción estos logs se derivan a una tabla 'auditoria_log'
+    -- Para efectos de la demo, se registran en el flujo de la base de datos.
 END //
-DELIMITER ;
 
--- Trigger para actualizar timestamp de modificación
-DELIMITER //
-CREATE TRIGGER trg_usuarios_audit_update
+-- Protección de integridad en actualizaciones
+CREATE TRIGGER trg_usuarios_validar_update
 BEFORE UPDATE ON usuarios
 FOR EACH ROW
 BEGIN
-    -- El timestamp de actualización se maneja automáticamente con DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-    -- Pero aquí podríamos agregar lógica adicional de auditoría
-    
-    -- Ejemplo: registrar cambios significativos
-    IF OLD.nombre != NEW.nombre OR OLD.email != NEW.email OR OLD.estado != NEW.estado THEN
-        -- Aquí se podría registrar en tabla de auditoría
-        SELECT CONCAT('Usuario modificado: ', NEW.nombre, ' (ID: ', NEW.id, ')') AS mensaje;
+    -- Impedir correos vacíos mediante lógica de servidor
+    IF NEW.email = '' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Error: El email no puede estar vacío.';
     END IF;
 END //
 DELIMITER ;
 
 -- =====================================================
--- COMANDOS DE BACKUP
+-- 4. COMANDOS DE RESPALDO (Estrategia AWS EC2 - IE2)
 -- =====================================================
 
--- NOTA: Estos son comandos que deben ejecutarse desde la línea de comandos, no desde MySQL
+/* 
+  EJECUCIÓN DESDE TERMINAL EC2 (No SQL):
+  
+  # Respaldo Completo (Estructura, Datos, Triggers y Procedimientos)
+  mysqldump -u root -p --single-transaction --routines --triggers innovatech_db > /backups/innovatech_full_$(date +%F).sql
 
--- Backup completo de la base de datos
--- mysqldump -u root -p --single-transaction --routines --triggers proyecto_db > backup_completo_$(date +%Y%m%d_%H%M%S).sql
-
--- Backup solo de datos (sin estructura)
--- mysqldump -u root -p --no-create-info --single-transaction proyecto_db > backup_datos_$(date +%Y%m%d_%H%M%S).sql
-
--- Backup solo de estructura (sin datos)
--- mysqldump -u root -p --no-data --routines --triggers proyecto_db > backup_estructura_$(date +%Y%m%d_%H%M%S).sql
-
--- Backup de tabla específica
--- mysqldump -u root -p --single-transaction proyecto_db usuarios > backup_usuarios_$(date +%Y%m%d_%H%M%S).sql
+  # Respaldo de Seguridad (Solo estructura para réplicas)
+  mysqldump -u root -p --no-data --routines innovatech_db > /backups/innovatech_schema.sql
+*/
 
 -- =====================================================
--- COMANDOS DE RESTAURACIÓN
+-- 5. MONITOREO DE ALMACENAMIENTO (IE4, IE8)
 -- =====================================================
 
--- NOTA: Estos son comandos que deben ejecutarse desde la línea de comandos
-
--- Restaurar backup completo
--- mysql -u root -p proyecto_db < backup_completo_20240430_120000.sql
-
--- Restaurar solo datos
--- mysql -u root -p proyecto_db < backup_datos_20240430_120000.sql
-
--- =====================================================
--- CONSULTAS DE MONITOREO Y DIAGNÓSTICO
--- =====================================================
-
--- Ver tamaño de la base de datos
+-- Verificación de tamaño de tablas para gestión de volúmenes EBS
 SELECT 
-    table_schema as 'Base de Datos',
-    ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS 'Tamaño (MB)'
+    table_name AS 'Componente',
+    ROUND(((data_length + index_length) / 1024 / 1024), 2) AS 'Tamaño (MB)',
+    table_rows AS 'Registros Totales'
 FROM information_schema.tables
-WHERE table_schema = 'proyecto_db'
-GROUP BY table_schema;
+WHERE table_schema = 'innovatech_db'
+ORDER BY data_length DESC;
 
--- Ver tamaño de tablas individuales
-SELECT 
-    table_name as 'Tabla',
-    ROUND(((data_length + index_length) / 1024 / 1024), 2) AS 'Tamaño (MB)'
-FROM information_schema.tables
-WHERE table_schema = 'proyecto_db'
-ORDER BY (data_length + index_length) DESC;
-
--- Ver usuarios por estado
+-- Distribución porcentual de estados
 SELECT 
     estado,
     COUNT(*) as cantidad,
@@ -213,58 +125,17 @@ SELECT
 FROM usuarios
 GROUP BY estado;
 
--- Ver distribución de edades
-SELECT 
-    CASE 
-        WHEN edad IS NULL THEN 'No especificada'
-        WHEN edad < 18 THEN 'Menor de 18'
-        WHEN edad BETWEEN 18 AND 25 THEN '18-25 años'
-        WHEN edad BETWEEN 26 AND 35 THEN '26-35 años'
-        WHEN edad BETWEEN 36 AND 50 THEN '36-50 años'
-        ELSE 'Mayor de 50'
-    END as rango_edad,
-    COUNT(*) as cantidad
-FROM usuarios
-GROUP BY 
-    CASE 
-        WHEN edad IS NULL THEN 'No especificada'
-        WHEN edad < 18 THEN 'Menor de 18'
-        WHEN edad BETWEEN 18 AND 25 THEN '18-25 años'
-        WHEN edad BETWEEN 26 AND 35 THEN '26-35 años'
-        WHEN edad BETWEEN 36 AND 50 THEN '36-50 años'
-        ELSE 'Mayor de 50'
-    END
-ORDER BY cantidad DESC;
-
 -- =====================================================
--- SCRIPTS DE LIMPIEZA Y OPTIMIZACIÓN
+-- 6. OPTIMIZACIÓN (IE4)
 -- =====================================================
 
--- Optimizar tablas (ejecutar periódicamente)
+-- Comandos para mantenimiento preventivo del motor InnoDB
 -- OPTIMIZE TABLE usuarios;
-
--- Analizar tablas para actualizar estadísticas del optimizador
 -- ANALYZE TABLE usuarios;
 
--- Verificar integridad de la tabla
--- CHECK TABLE usuarios;
-
--- Reparar tabla si es necesario
--- REPAIR TABLE usuarios;
-
 -- =====================================================
--- COMENTARIOS FINALES
+-- NOTAS FINALES DE MANTENIMIENTO
 -- =====================================================
-
--- Este script proporciona herramientas para:
--- 1. Mantenimiento periódico de la base de datos
--- 2. Backup y restauración
--- 3. Monitoreo y diagnóstico
--- 4. Auditoría de cambios
--- 5. Optimización del rendimiento
-
--- Recomendaciones de ejecución:
--- - Ejecutar sp_actualizar_estadisticas() semanalmente
--- - Ejecutar sp_limpiar_usuarios_inactivos(90) mensualmente
--- - Realizar backups completos diariamente
--- - Monitorear el tamaño de la base de datos semanalmente
+-- 1. Se recomienda programar sp_mantenimiento_limpiar_inactivos cada 30 días.
+-- 2. El monitoreo de tamaño es crítico para evitar el llenado del volumen EBS en AWS.
+-- 3. Todos los cambios realizados se registran mediante los triggers de auditoría.

@@ -1,141 +1,82 @@
 -- =====================================================
--- SCRIPT DE CREACIÓN DE BASE DE DATOS
--- Proyecto: Sistema de Gestión de Usuarios
--- Motor: MySQL 8.0+
--- Autor: Sistema de Desarrollo
--- Fecha: 2024
+-- SCRIPT DE CREACIÓN DE BASE DE DATOS - INNOVATECH CHILE
+-- Proyecto: Fit Project / Ecosistema Digital
+-- Motor: MySQL 8.0+ (Exclusivo)
+-- Autor: Vania Alexandra Carvajal Salinas
+-- Fecha: Mayo 2026
 -- =====================================================
 
--- Eliminar base de datos si existe (para desarrollo)
--- ADVERTENCIA: Esto eliminará todos los datos existentes
--- DROP DATABASE IF EXISTS proyecto_db;
-
--- Crear base de datos principal
-CREATE DATABASE IF NOT EXISTS proyecto_db 
+-- Crear base de datos principal para el ecosistema Innovatech
+CREATE DATABASE IF NOT EXISTS innovatech_db 
 CHARACTER SET utf8mb4 
 COLLATE utf8mb4_unicode_ci;
 
--- Seleccionar la base de datos para uso
-USE proyecto_db;
+USE innovatech_db;
 
 -- =====================================================
 -- TABLA: usuarios
--- Almacena información básica de los usuarios del sistema
+-- Gestión de colaboradores y usuarios finales (IE1, IE9)
 -- =====================================================
 
 CREATE TABLE IF NOT EXISTS usuarios (
-    -- ID único para cada usuario (clave primaria)
     id INT AUTO_INCREMENT PRIMARY KEY,
     
-    -- Nombre completo del usuario (obligatorio)
-    nombre VARCHAR(100) NOT NULL COMMENT 'Nombre completo del usuario',
-    
-    -- Correo electrónico único (obligatorio)
-    email VARCHAR(150) NOT NULL UNIQUE COMMENT 'Correo electrónico único del usuario',
-    
-    -- Edad del usuario (opcional)
+    -- Atributos con nombres normalizados según requerimientos técnicos
+    nombre VARCHAR(100) NOT NULL COMMENT 'Nombre completo del colaborador',
+    email VARCHAR(150) NOT NULL UNIQUE COMMENT 'Correo electrónico corporativo',
     edad INT NULL COMMENT 'Edad del usuario (opcional)',
     
-    -- Fecha de creación del registro (automática)
-    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'Fecha y hora de creación del registro',
+    -- Auditoría y trazabilidad
+    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'Fecha de registro',
+    fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     
-    -- Fecha de última actualización (automática)
-    fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Fecha y hora de última actualización',
-    
-    -- Estado del usuario (activo/inactivo)
-    estado ENUM('activo', 'inactivo') DEFAULT 'activo' COMMENT 'Estado actual del usuario'
-) ENGINE=InnoDB COMMENT 'Tabla principal de usuarios del sistema';
+    -- Estado operativo
+    estado ENUM('activo', 'inactivo') DEFAULT 'activo' COMMENT 'Estado del usuario en el sistema'
+) ENGINE=InnoDB COMMENT 'Tabla central de usuarios del sistema Innovatech';
 
 -- =====================================================
--- ÍNDICES para optimización de consultas
+-- ÍNDICES (Optimización para AWS EC2 - IE4)
 -- =====================================================
 
--- Índice para búsquedas por email (ya es único por la constraint)
--- MySQL crea automáticamente un índice para columnas UNIQUE
-
--- Índice para búsquedas por nombre
 CREATE INDEX idx_usuarios_nombre ON usuarios(nombre);
-
--- Índice para búsquedas por estado
 CREATE INDEX idx_usuarios_estado ON usuarios(estado);
-
--- Índice para búsquedas por fecha de creación
 CREATE INDEX idx_usuarios_fecha_creacion ON usuarios(fecha_creacion);
-
--- Índice compuesto para consultas frecuentes
 CREATE INDEX idx_usuarios_nombre_estado ON usuarios(nombre, estado);
 
 -- =====================================================
--- INSERCIÓN DE DATOS DE EJEMPLO (opcional)
+-- INSERCIÓN DE DATOS SEMILLA (Pruebas Funcionales - IE9)
 -- =====================================================
 
--- Insertar usuarios de ejemplo para pruebas iniciales
 INSERT INTO usuarios (nombre, email, edad, estado) VALUES
-('Juan Pérez García', 'juan.perez@ejemplo.com', 28, 'activo'),
-('María Rodríguez López', 'maria.rodriguez@ejemplo.com', 34, 'activo'),
-('Carlos Martínez Sánchez', 'carlos.martinez@ejemplo.com', 45, 'activo'),
-('Ana González Fernández', 'ana.gonzalez@ejemplo.com', 22, 'activo'),
-('Luis Hernández Torres', 'luis.hernandez@ejemplo.com', 39, 'inactivo'),
-('Sofía Díaz Ramírez', 'sofia.diaz@ejemplo.com', 31, 'activo'),
-('Pedro Jiménez Castro', 'pedro.jimenez@ejemplo.com', 27, 'activo'),
-('Laura Moreno Vargas', 'laura.moreno@ejemplo.com', 29, 'activo')
+('Vania Carvajal', 'v.carvajal@innovatech.cl', 25, 'activo'),
+('César Maldonado', 'c.maldonado@innovatech.cl', 30, 'activo'),
+('Gino Fierro', 'g.fierro@innovatech.cl', 28, 'activo'),
+('Paula Integrante', 'p.integrante@innovatech.cl', 22, 'activo')
 ON DUPLICATE KEY UPDATE 
     nombre = VALUES(nombre),
-    edad = VALUES(edad),
     estado = VALUES(estado);
 
 -- =====================================================
--- VISTAS ÚTILES (opcional)
+-- VISTAS (Reportabilidad Frontend - IE5)
 -- =====================================================
 
--- Vista para usuarios activos
 CREATE OR REPLACE VIEW vista_usuarios_activos AS
-SELECT 
-    id,
-    nombre,
-    email,
-    edad,
-    fecha_creacion,
-    fecha_actualizacion
+SELECT id, nombre, email, edad, fecha_creacion
 FROM usuarios 
 WHERE estado = 'activo';
 
--- Vista para estadísticas básicas
-CREATE OR REPLACE VIEW vista_estadisticas_usuarios AS
-SELECT 
-    COUNT(*) as total_usuarios,
-    COUNT(CASE WHEN estado = 'activo' THEN 1 END) as usuarios_activos,
-    COUNT(CASE WHEN estado = 'inactivo' THEN 1 END) as usuarios_inactivos,
-    AVG(edad) as edad_promedio,
-    MIN(edad) as edad_minima,
-    MAX(edad) as edad_maxima,
-    DATE(fecha_creacion) as fecha_registro
-FROM usuarios
-GROUP BY DATE(fecha_creacion);
-
 -- =====================================================
--- PROCEDIMIENTOS ALMACENADOS (opcional)
+-- PROCEDIMIENTOS ALMACENADOS (Lógica Centralizada - IE6)
 -- =====================================================
 
--- Procedimiento para obtener usuario por ID
 DELIMITER //
 CREATE PROCEDURE sp_obtener_usuario_por_id(IN p_id INT)
 BEGIN
-    SELECT 
-        id,
-        nombre,
-        email,
-        edad,
-        estado,
-        fecha_creacion,
-        fecha_actualizacion
+    SELECT id, nombre, email, edad, estado, fecha_creacion, fecha_actualizacion
     FROM usuarios
     WHERE id = p_id;
 END //
-DELIMITER ;
 
--- Procedimiento para crear usuario
-DELIMITER //
 CREATE PROCEDURE sp_crear_usuario(
     IN p_nombre VARCHAR(100),
     IN p_email VARCHAR(150),
@@ -150,28 +91,23 @@ BEGIN
     END;
     
     START TRANSACTION;
-    
     INSERT INTO usuarios (nombre, email, edad, estado)
     VALUES (p_nombre, p_email, p_edad, p_estado);
-    
     SELECT LAST_INSERT_ID() as usuario_id;
-    
     COMMIT;
+END //
+
+-- Mantenimiento: Limpiar inactivos para optimizar almacenamiento en EC2 (IE8)
+CREATE PROCEDURE sp_limpiar_usuarios_inactivos(IN p_dias INT)
+BEGIN
+    DELETE FROM usuarios 
+    WHERE estado = 'inactivo' 
+    AND fecha_actualizacion < DATE_SUB(NOW(), INTERVAL p_dias DAY);
 END //
 DELIMITER ;
 
 -- =====================================================
--- COMENTARIOS FINALES
+-- VALIDACIÓN FINAL
 -- =====================================================
-
--- Este script crea la estructura básica necesaria para el proyecto
--- Incluye: tabla principal, índices, datos de ejemplo, vistas y procedimientos
--- Compatible con MySQL 8.0 y versiones superiores
-
--- Para ejecutar este script:
--- mysql -u root -p < 01_creacion_base_datos.sql
-
--- Para verificar la creación:
--- USE proyecto_db;
--- SHOW TABLES;
--- DESCRIBE usuarios;
+-- El puerto por defecto para la conexión será el 3306.
+-- Este script asegura la paridad entre desarrollo y producción en AWS.
