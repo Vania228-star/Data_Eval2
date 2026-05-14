@@ -1,7 +1,7 @@
 # Base de Datos - MySQL
 
 ## Descripción
-Base de datos MySQL para el sistema de gestión de usuarios. Incluye scripts SQL completos para la creación, mantenimiento y backup de la base de datos.
+Módulo de persistencia basado en MySQL 8.0 diseñado para el ecosistema digital de Innovatech. Esta solución garantiza la integridad y disponibilidad de los datos de usuarios mediante el uso de contenedores Docker y políticas de persistencia robustas aplicadas en la arquitectura de AWS.
 
 ## Versiones y Herramientas Requeridas
 
@@ -18,14 +18,42 @@ Base de datos MySQL para el sistema de gestión de usuarios. Incluye scripts SQL
 
 ```
 database/
-├── 01_creacion_base_datos.sql    # Script principal de creación
-├── 02_backup_y_mantenimiento.sql # Scripts de mantenimiento
-└── README.md                     # Este archivo
+├── 01_creacion_base_datos.sql    # Definición de esquema y datos semilla
+├── 02_backup_y_mantenimiento.sql # Scripts para continuidad operativa
+├── docker-compose.yml            # Orquestación y configuración de volúmenes
+└── README.md                     # Documentación técnica
 ```
+## Persistencia de Datos
+Se ha implementado una estrategia de persistencia mediante Volúmenes Docker para asegurar que la información crítica no se pierda al reiniciar contenedores:
+
+- **Tipo de Volumen**: Se utilizan Named Volumes (definidos en docker-compose.yml).
+
+- **Justificación**: Se eligen Named Volumes para delegar la gestión del almacenamiento a Docker, facilitando la portabilidad y el respaldo de datos en las instancias EC2 de AWS.
+
+- **Continuidad Operativa**: El volumen asegura la persistencia de las tablas de usuarios y configuraciones del Backend.
+
+Nota técnica: Se optó por Named Volumes en lugar de Bind Mounts porque los primeros son gestionados íntegramente por Docker, lo que evita problemas de permisos de usuario en la instancia EC2 de AWS y garantiza que los datos persistan incluso si la estructura de directorios del host cambia.
 
 ## Instalación y Configuración
 
+Existen dos modalidades para preparar el entorno de base de datos de Innovatech. Para el despliegue en la instancia EC2 de AWS, se prioriza el uso de contenedores.
+
+### Despliegue con Docker
+
+Esta opción automatiza la instalación y configuración del motor de base de datos, garantizando la paridad entre el entorno de desarrollo y producción.
+
+```bash
+# Iniciar el contenedor de base de datos con persistencia (IE2)
+docker-compose up -d db
+
+# Verificar que el contenedor esté corriendo (IE4)
+docker ps
+```
+
 ### 1. Instalar MySQL Server
+
+En caso de requerir una instalación nativa para pruebas locales, siga estos comandos según su sistema operativo:
+
 ```bash
 # Ubuntu/Debian
 sudo apt update
@@ -39,6 +67,9 @@ sudo yum install mysql-server
 ```
 
 ### 2. Configurar MySQL
+
+Una vez instalado el motor de forma nativa, es crítico asegurar la instancia:
+
 ```bash
 # Iniciar servicio MySQL
 sudo systemctl start mysql
@@ -49,6 +80,9 @@ sudo mysql_secure_installation
 ```
 
 ### 3. Crear Base de Datos
+
+Para cargar la estructura de tablas y los datos semilla necesarios para la demostración funcional, ejecute los scripts proporcionados en la carpeta database/:
+
 ```bash
 # Ejecutar script de creación
 mysql -u root -p < 01_creacion_base_datos.sql
@@ -60,7 +94,17 @@ source 01_creacion_base_datos.sql;
 
 ## Esquema de la Base de Datos
 
+Para que esta sección cumpla con el estándar de Innovatech Chile, debe reflejar la estructura técnica exacta que has definido en tus scripts y archivos de configuración. Es fundamental que los nombres de las columnas coincidan con los que usas en tu código (como fecha_inicio) para asegurar la trazabilidad.
+
+Aquí tienes cómo debe verse esta parte:
+
+Esquema de la Base de Datos
+Tabla Principal: usuarios
+Esta tabla centraliza la información de los colaboradores de Innovatech y es consumida por el microservicio de Backend.
+
 ### Tabla Principal: `usuarios`
+
+Representa la entidad central para la gestión de acceso y perfiles en el sistema.
 
 | Columna | Tipo | Nulo | Default | Descripción |
 |---------|------|------|---------|-------------|
@@ -73,12 +117,15 @@ source 01_creacion_base_datos.sql;
 | `estado` | ENUM('activo','inactivo') | No | 'activo' | Estado del usuario |
 
 ### Índices
-- `PRIMARY KEY` en `id`
-- `UNIQUE INDEX` en `email`
-- `INDEX` en `nombre`
-- `INDEX` en `estado`
-- `INDEX` en `fecha_creacion`
-- `INDEX COMPUESTO` en `nombre, estado`
+
+Se han implementado índices estratégicos para garantizar una respuesta rápida en la instancia EC2 de AWS:
+
+- `PRIMARY KEY` en `id` # Para búsquedas directas y relaciones.
+- `UNIQUE INDEX` en `email` # Evita duplicidad de cuentas y acelera el login.
+- `INDEX` en `nombre` # Optimiza búsquedas por texto.
+- `INDEX` en `estado` # Mejora el filtrado de usuarios operativos.
+- `INDEX` en `fecha_creacion` # Útil para reportes cronológicos.
+- `INDEX COMPUESTO` en `nombre, estado` # Optimiza consultas complejas del Frontend.
 
 ### Vistas Disponibles
 - `vista_usuarios_activos`: Usuarios con estado 'activo'
@@ -87,15 +134,19 @@ source 01_creacion_base_datos.sql;
 ## Comandos Básicos
 
 ### Conexión a la Base de Datos
+Para interactuar con el contenedor de base de datos desde la terminal de la instancia EC2:
+
 ```bash
 # Conectar como root
 mysql -u root -p
 
 # Conectar a la base de datos específica
-mysql -u root -p proyecto_db
+mysql -u root -p innovatech_db
 ```
 
 ### Consultas Útiles
+Comandos esenciales para validar el despliegue funcional en la subred privada:
+
 ```sql
 -- Ver todas las tablas
 SHOW TABLES;
@@ -114,68 +165,77 @@ SELECT * FROM vista_estadisticas_usuarios;
 ```
 
 ## Procedimientos Almacenados
+Se han implementado procedimientos almacenados para encapsular la lógica de base de datos, mejorando la seguridad y reduciendo la latencia entre el Backend y la base de datos en la red privada de AWS.
 
 ### `sp_obtener_usuario_por_id(id)`
-Obtiene información completa de un usuario por su ID.
+Recupera el perfil completo de un usuario mediante su identificador único.
 
 ```sql
 CALL sp_obtener_usuario_por_id(1);
 ```
 
 ### `sp_crear_usuario(nombre, email, edad, estado)`
-Crea un nuevo usuario y retorna su ID.
+Registra un nuevo usuario en el sistema y devuelve el ID generado. Centraliza la validación de datos antes de la inserción.
 
 ```sql
 CALL sp_crear_usuario('Nuevo Usuario', 'nuevo@ejemplo.com', 25, 'activo');
 ```
 
 ### `sp_limpiar_usuarios_inactivos(dias)`
-Elimina usuarios inactivos con más de X días de antigüedad.
+Optimiza el rendimiento del sistema eliminando registros inactivos con una antigüedad superior a los días especificados.
 
 ```sql
 CALL sp_limpiar_usuarios_inactivos(90);
 ```
 
 ### `sp_actualizar_estadisticas()`
-Muestra estadísticas actualizadas del sistema.
+Genera métricas en tiempo real sobre el estado de la plataforma para el consumo del Frontend.
 
 ```sql
 CALL sp_actualizar_estadisticas();
 ```
 
 ## Backup y Restauración
+Para garantizar que la información crítica no se pierda ante fallos en la instancia EC2, se definen los siguientes protocolos de respaldo utilizando mysqldump.
 
 ### Backup Completo
+Este comando incluye los procedimientos almacenados y disparadores necesarios para la reconstrucción total del sistema.
+
 ```bash
 # Backup con fecha
-mysqldump -u root -p --single-transaction --routines --triggers proyecto_db > backup_$(date +%Y%m%d_%H%M%S).sql
+mysqldump -u root -p --single-transaction --routines --triggers innovatech_db > backup_$(date +%Y%m%d_%H%M%S).sql
 
 # Backup comprimido
-mysqldump -u root -p --single-transaction --routines --triggers proyecto_db | gzip > backup_$(date +%Y%m%d_%H%M%S).sql.gz
+mysqldump -u root -p --single-transaction --routines --triggers innovatech_db | gzip > backup_$(date +%Y%m%d_%H%M%S).sql.gz
 ```
 
 ### Backup Selectivo
+Útil para migraciones rápidas o auditorías específicas de datos.
+
 ```bash
 # Solo datos
-mysqldump -u root -p --no-create-info --single-transaction proyecto_db > backup_datos.sql
+mysqldump -u root -p --no-create-info --single-transaction innovatech_db > backup_datos.sql
 
 # Solo estructura
-mysqldump -u root -p --no-data --routines --triggers proyecto_db > backup_estructura.sql
+mysqldump -u root -p --no-data --routines --triggers innovatech_db > backup_estructura.sql
 
 # Tabla específica
-mysqldump -u root -p --single-transaction proyecto_db usuarios > backup_usuarios.sql
+mysqldump -u root -p --single-transaction innovatech_db usuarios > backup_usuarios.sql
 ```
 
 ### Restauración
+Procedimientos para restablecer el servicio ante una pérdida de datos en la infraestructura de AWS.
+
 ```bash
 # Restaurar backup completo
-mysql -u root -p proyecto_db < backup_20240430_120000.sql
+mysql -u root -p innovatech_db < backup_20240430_120000.sql
 
 # Restaurar desde archivo comprimido
-gunzip < backup_20240430_120000.sql.gz | mysql -u root -p proyecto_db
+gunzip < backup_20240430_120000.sql.gz | mysql -u root -p innovatech_db
 ```
 
 ## Mantenimiento
+Prácticas DevOps para garantizar la eficiencia y estabilidad del motor de base de datos a largo plazo.
 
 ### Optimización Periódica
 ```sql
@@ -190,13 +250,15 @@ CHECK TABLE usuarios;
 ```
 
 ### Monitoreo
+Consultas críticas para supervisar el rendimiento en la instancia EC2.
+
 ```sql
 -- Ver tamaño de la base de datos
 SELECT 
     table_schema as 'Base de Datos',
     ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS 'Tamaño (MB)'
 FROM information_schema.tables
-WHERE table_schema = 'proyecto_db'
+WHERE table_schema = 'innovatech_db'
 GROUP BY table_schema;
 
 -- Ver conexiones activas
@@ -215,16 +277,26 @@ SHOW STATUS;
 - **3306**: Es el puerto por defecto donde MySQL escucha conexiones TCP/IP desde clientes externos
 
 ## Configuración de Red
+Configuración necesaria para permitir la comunicación segura entre el Frontend y el Backend dentro de la arquitectura de AWS.
+
+### Puertos Requeridos
+- **Puerto 3306**: Puerto estándar de MySQL utilizado para la comunicación interna entre el contenedor del Backend y la base de datos.
+
+El puerto 3306 debe estar abierto en el Security Group de la instancia de Base de Datos, permitiendo únicamente el tráfico entrante desde el Security Group de la instancia del Backend (Regla de entrada restringida).
 
 ### Acceso Remoto
+Siguiendo las buenas prácticas, el Backend no debe usar la cuenta root. Se crea un usuario específico para la aplicación.
+
 ```sql
 -- Crear usuario para acceso remoto
 CREATE USER 'app_user'@'%' IDENTIFIED BY 'contraseña_segura';
-GRANT SELECT, INSERT, UPDATE, DELETE ON proyecto_db.* TO 'app_user'@'%';
+GRANT SELECT, INSERT, UPDATE, DELETE ON innovatech_db.* TO 'app_user'@'%';
 FLUSH PRIVILEGES;
 ```
 
 ### Configuración de MySQL Server
+Ajustes para permitir la escucha de peticiones dentro de la red privada de Docker.
+
 En `/etc/mysql/mysql.conf.d/mysqld.cnf` (Linux) o my.ini (Windows):
 ```ini
 [mysqld]
@@ -240,34 +312,46 @@ collation-server = utf8mb4_unicode_ci
 ```
 
 ## Variables de Entorno para Aplicaciones
+Para garantizar la portabilidad entre entornos de desarrollo y producción (AWS EC2), la conexión se gestiona mediante variables de entorno que deben configurarse en el archivo docker-compose.yml o a través de GitHub Secrets.
 
 | Variable | Descripción | Valor por Defecto |
 |----------|-------------|-------------------|
 | `DB_HOST` | Host del servidor MySQL | localhost |
 | `DB_PORT` | Puerto de MySQL | 3306 |
-| `DB_USER` | Usuario de la base de datos | root |
+| `DB_USER` | Usuario de la base de datos | app_user |
 | `DB_PASSWORD` | Contraseña del usuario | (tu contraseña) |
-| `DB_NAME` | Nombre de la base de datos | proyecto_db |
+| `DB_NAME` | Nombre de la base de datos | innovatech_db |
+
+Las variables DB_PASSWORD y DB_ROOT_PASSWORD no deben declararse en texto plano. Se configuran como GitHub Secrets y se inyectan en el contenedor durante el paso de despliegue del pipeline CI/CD en la rama deploy
 
 ## Seguridad
 
-### Buenas Prácticas
-1. **No usar root en producción**: Crear usuarios específicos para cada aplicación
-2. **Contraseñas seguras**: Usar contraseñas complejas y rotarlas periódicamente
-3. **Acceso limitado**: Configurar firewall para permitir solo IPs necesarias
-4. **Backups regulares**: Programar backups automáticos diarios
-5. **Auditoría**: Habilitar logs de consultas si es necesario
+### Buenas Prácticas de Innovatech Chile
+
+- **No usar root en producción**: Se deben crear usuarios específicos con privilegios limitados para el Backend.
+
+- **Contraseñas seguras**: Implementar políticas de complejidad y rotación periódica.
+
+- **Acceso limitado (Aislamiento de Red)**: Configurar los Security Groups en AWS para permitir tráfico únicamente desde la instancia del Frontend hacia el puerto 3306.
+
+- **Backups regulares**: Programar tareas automatizadas para asegurar la continuidad operativa (IE2).
+
+- **Auditoría y Logs**: Habilitar el registro de consultas para trazabilidad de errores y accesos no autorizados.
 
 ### Configuración SSL (Opcional)
+Para proteger la comunicación entre microservicios, se puede requerir el uso de certificados SSL:
+
 ```sql
 -- Requerir SSL para conexiones
 CREATE USER 'secure_user'@'%' IDENTIFIED BY 'contraseña' REQUIRE SSL;
-GRANT SELECT, INSERT, UPDATE, DELETE ON proyecto_db.* TO 'secure_user'@'%';
+GRANT SELECT, INSERT, UPDATE, DELETE ON innovatech_db.* TO 'secure_user'@'%';
 ```
 
 ## Troubleshooting
+Procedimientos para la resolución de incidentes comunes durante el despliegue o la operación en EC2.
 
 ### Problemas Comunes
+Si el Frontend no logra comunicarse con la base de datos, verifique:
 
 #### Error de conexión
 ```bash
@@ -282,24 +366,22 @@ sudo tail -f /var/log/mysql/error.log
 ```
 
 #### Error de permisos
+Si la aplicación recibe un error de "Access Denied":
+
 ```sql
 -- Verificar permisos del usuario
 SHOW GRANTS FOR 'app_user'@'%';
 
 -- Otorgar permisos necesarios
-GRANT ALL PRIVILEGES ON proyecto_db.* TO 'app_user'@'%';
+GRANT ALL PRIVILEGES ON innovatech_db.* TO 'app_user'@'%';
 FLUSH PRIVILEGES;
 ```
 
 #### Problemas con caracteres
+Para asegurar que los nombres y datos se visualicen correctamente en el Frontend:
+
 ```sql
 -- Verificar configuración de caracteres
 SHOW VARIABLES LIKE 'character_set%';
 SHOW VARIABLES LIKE 'collation%';
 ```
-
-## Notas Importantes
-- Este diseño está optimizado para el proyecto específico de gestión de usuarios
-- Los scripts incluyen datos de ejemplo para facilitar las pruebas iniciales
-- Se recomienda ejecutar los scripts en orden: primero `01_creacion_base_datos.sql`
-- El script `02_backup_y_mantenimiento.sql` es opcional pero recomendado para producción
