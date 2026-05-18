@@ -1,0 +1,22 @@
+name: Deploy Innovatech Stack
+
+on:
+  push:
+    branches: [ deploy ]
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout repository code
+        uses: actions/checkout@v4
+
+      - name: Deploy Stack via Docker Compose
+        run: |
+          # 1. Copiar los archivos nuevos al directorio del proyecto en AWS
+          cd ~/innovatech-chile
+          cp -r ${{ github.workspace }}/* .
+          
+          # 2. Rebuildear y levantar solo las aplicaciones sin tumbar la BD activa
+          docker compose up -d --build backend frontend

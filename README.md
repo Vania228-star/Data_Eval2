@@ -7,7 +7,6 @@ Módulo de persistencia basado en MySQL 8.0 diseñado para el ecosistema digital
 
 ### Motor de Base de Datos
 - **MySQL**: Versión 8.0 o superior
-- **MariaDB**: Versión 10.4 o superior (compatible)
 
 ### Herramientas de Administración
 - **MySQL Client**: Para ejecución de scripts desde línea de comandos
@@ -19,9 +18,11 @@ Para asegurar la portabilidad y el cumplimiento del flujo CI/CD, el repositorio 
 
 ```
 database/
+├── .github/workflows/database-deploy.yml
 ├── 01_creacion_base_datos.sql    # Estructura central, Vistas y SP de aplicación.
 ├── 02_backup_y_mantenimiento.sql # Triggers de auditoría, funciones y protocolos de backup.
 ├── docker-compose.yml            # Orquestación y configuración de volúmenes
+├── Dockerfile
 └── README.md                     # Documentación técnica
 ```
 ## Persistencia de Datos

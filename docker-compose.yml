@@ -9,7 +9,7 @@ services:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
     volumes:
       - db_data:/var/lib/mysql
-      - ./data/init:/docker-entrypoint-initdb.d
+      - ./database:/docker-entrypoint-initdb.d
     networks:
       - back-net
 
@@ -19,6 +19,8 @@ services:
     environment:
       DB_HOST: db
       DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: innovatech_db
+      DB_USER: root
     depends_on:
       - db
     networks:
