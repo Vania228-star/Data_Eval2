@@ -16,6 +16,8 @@ services:
   backend:
     build: ./backend
     restart: always
+    ports:
+      - "8000:8000"
     environment:
       DB_HOST: db
       DB_PASSWORD: ${DB_PASSWORD}
