@@ -18,3 +18,4 @@ jobs:
           cp -r ${{ github.workspace }}/* .
           
           docker compose up -d --build backend frontend
+          
